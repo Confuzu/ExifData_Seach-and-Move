@@ -10,7 +10,6 @@ from pathlib import Path
 import json
 import time
 
-
 # Setup logging
 script_dir = os.path.dirname(os.path.abspath(__file__))
 log_file_path = os.path.join(script_dir, "process_exiftool_search_DB.txt")
@@ -65,6 +64,7 @@ def create_table():
                     last_modified REAL,
                     metadata TEXT,
                     metadata_after_prompt TEXT,
+                    last_updated REAL,
                     PRIMARY KEY (file_name)
                 );
             """)
@@ -92,6 +92,7 @@ def normalize_metadata(metadata):
 def bulk_update_or_insert_metadata(metadata_list: List[Tuple[str, str, str]]):
     with db_connection() as conn:
         cursor = conn.cursor()
+        current_time = time.time()
         for file_name, file_path, metadata in metadata_list:
             parts = metadata.split("Negative prompt:", 1)
             metadata_before_prompt = normalize_metadata(parts[0].strip()) if parts else None
@@ -100,15 +101,16 @@ def bulk_update_or_insert_metadata(metadata_list: List[Tuple[str, str, str]]):
             last_modified = os.path.getmtime(file_path)
 
             cursor.execute("""
-                INSERT INTO file_metadata (file_name, file_path, last_modified, metadata, metadata_after_prompt)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO file_metadata (file_name, file_path, last_modified, metadata, metadata_after_prompt, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(file_name) 
                 DO UPDATE SET 
                     file_path = EXCLUDED.file_path,
                     last_modified = EXCLUDED.last_modified, 
                     metadata = EXCLUDED.metadata,
-                    metadata_after_prompt = EXCLUDED.metadata_after_prompt;
-                """, (file_name, file_path, last_modified, metadata_before_prompt, metadata_after_prompt))
+                    metadata_after_prompt = EXCLUDED.metadata_after_prompt,
+                    last_updated = EXCLUDED.last_updated;
+                """, (file_name, file_path, last_modified, metadata_before_prompt, metadata_after_prompt, current_time))
         conn.commit()
 
 def fetch_metadata(filepath: str, exiftool_cmd: str) -> Tuple[str, Optional[str], Optional[str]]:
@@ -147,33 +149,41 @@ def batch_update_metadata(file_list: List[str], exiftool_cmd: str):
 
     logger_db.info("Finished adding Metadata from Images to the database.")
 
-def is_file_updated(file_path):
-    if not file_path:
-        raise ValueError("file_path is a required parameter")
-    
-    logger_db.debug(f"Checking file: {file_path}")
-    
-    with db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT last_modified FROM file_metadata WHERE file_path = ?", (file_path,))
-        data = cursor.fetchone()
-        
-        if not data:
-            logger_db.debug(f"No database entry for {file_path}")
-            return True
-        
-        try:
-            last_modified_db = data[0]
-            last_modified_file = os.path.getmtime(file_path)
-            
-            logger_db.debug(f"File {file_path} - DB timestamp: {time.ctime(last_modified_db)}, "
-                            f"File timestamp: {time.ctime(last_modified_file)}")
-            
-            # Always return True to process all files
-            return True
-        except (IndexError, FileNotFoundError) as e:
-            logger_db.error(f"Error checking file {file_path}: {e}")
-            return True
+def update_file_path(old_path, new_path):
+    try:
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            current_time = time.time()
+            cursor.execute("""
+                UPDATE file_metadata 
+                SET file_path = ?, last_updated = ?
+                WHERE file_path = ?
+            """, (new_path, current_time, old_path))
+            if cursor.rowcount == 0:
+                logger_db.warning(f"No database entry found for file: {old_path}")
+            conn.commit()
+        logger_db.info(f"Updated file path in database: {old_path} -> {new_path}")
+    except sqlite3.Error as e:
+        logger_db.error(f"Database error updating file path: {e}")
+    except Exception as e:
+        logger_db.error(f"Unexpected error updating file path: {e}")
+
+def batch_update_file_paths(file_moves):
+    try:
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            current_time = time.time()
+            cursor.executemany("""
+                UPDATE file_metadata 
+                SET file_path = ?, last_updated = ?
+                WHERE file_path = ?
+            """, [(new_path, current_time, old_path) for old_path, new_path in file_moves])
+            conn.commit()
+        logger_db.info(f"Batch updated {len(file_moves)} file paths in the database")
+    except sqlite3.Error as e:
+        logger_db.error(f"Database error during batch update of file paths: {e}")
+    except Exception as e:
+        logger_db.error(f"Unexpected error during batch update of file paths: {e}")
 
 def get_metadata(file_path):
     if not file_path:
@@ -181,22 +191,22 @@ def get_metadata(file_path):
 
     logger_db.debug(f"Getting metadata for file: {file_path}")
 
-    with db_connection() as conn:
-        cursor = conn.cursor()
-        try:
+    try:
+        with db_connection() as conn:
+            cursor = conn.cursor()
             cursor.execute("SELECT metadata, metadata_after_prompt FROM file_metadata WHERE file_path = ?", (file_path,))
             data = cursor.fetchone()
             if data:
                 logger_db.debug(f"Metadata found for {file_path}")
-                logger_db.debug(f"Metadata: {data[0][:100]}...")
-                logger_db.debug(f"Metadata after prompt: {data[1][:100]}...")
             else:
                 logger_db.debug(f"No metadata found for {file_path}")
-        except sqlite3.Error as e:
-            logger_db.error(f"Failed to retrieve metadata from database for {file_path}: {e}")
-            raise ValueError(f"Failed to retrieve metadata from database: {e}")
-
-    return data if data else (None, None)
+            return data if data else (None, None)
+    except sqlite3.Error as e:
+        logger_db.error(f"Database error retrieving metadata for {file_path}: {e}")
+        raise
+    except Exception as e:
+        logger_db.error(f"Unexpected error retrieving metadata for {file_path}: {e}")
+        raise
 
 def extract_model_from_metadata(metadata_after_prompt):
     model = None
@@ -248,21 +258,30 @@ def parallel_list_models_in_directory(directory):
     return models
 
 def get_model_for_file(file_path):
-    with db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT metadata_after_prompt FROM file_metadata WHERE file_path = ?", (file_path,))
-        data = cursor.fetchone()
-        
-        if data:
-            metadata_after_prompt = data[0]
-            model = extract_model_from_metadata(metadata_after_prompt)
-            return file_path, model
-        else:
-            logger_db.debug(f"No metadata found for file: {file_path}")
-            return file_path, None
-
+    try:
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT metadata_after_prompt FROM file_metadata WHERE file_path = ?", (file_path,))
+            data = cursor.fetchone()
+            
+            if data:
+                metadata_after_prompt = data[0]
+                model = extract_model_from_metadata(metadata_after_prompt)
+                return file_path, model
+            else:
+                logger_db.debug(f"No metadata found for file: {file_path}")
+                return file_path, None
+    except sqlite3.Error as e:
+        logger_db.error(f"Database error getting model for file {file_path}: {e}")
+        return file_path, None
+    except Exception as e:
+        logger_db.error(f"Unexpected error getting model for file {file_path}: {e}")
+        return file_path, None
 
 def update_database_with_folder_contents(source_dir, exiftool_cmd):
+    if isinstance(source_dir, list):
+        raise ValueError("update_database_with_folder_contents expects a single directory, not a list")
+    
     logger_db.info(f"Updating database at {db_path}")
     logger_db.info(f"Updating database with contents of {source_dir}")
     
@@ -300,7 +319,6 @@ def check_exiftool():
         return None, "ExifTool not found. Please install it to use this script. https://exiftool.org/install.html"
     except subprocess.CalledProcessError:
         return None, "Error occurred while checking ExifTool."
-
 
 # Main function for testing
 def main():
