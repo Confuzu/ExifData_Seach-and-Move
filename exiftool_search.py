@@ -6,7 +6,6 @@ import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from utilities import CommandLineInterface
 
-
 # Configure logger
 script_dir = os.path.dirname(os.path.abspath(__file__))
 log_file_path = os.path.join(script_dir, "process_log_exiftool_search.txt")
@@ -24,34 +23,25 @@ def process_file(args):
     
     try:
         metadata, metadata_after_prompt = db_module.get_metadata(file_path)
-        logger_search.debug(f"Metadata for {file_path}: {metadata[:100]}...")
-        logger_search.debug(f"Metadata after prompt for {file_path}: {metadata_after_prompt[:100]}...")
-        
         if metadata and metadata_after_prompt:
             metadata_to_search = metadata if search_mode == "1" else metadata + " " + metadata_after_prompt
-            logger_search.debug(f"Searching in metadata for {file_path}: {metadata_to_search[:100]}...")
             
-            if metadata_key in metadata_to_search:
-                logger_search.debug(f"Metadata key '{metadata_key}' found in {file_path}")
-                if metadata_value in metadata_to_search:
-                    logger_search.debug(f"Metadata value '{metadata_value}' found in {file_path}")
-                    new_file_path = os.path.join(target_dir, os.path.basename(file_path))
-                    try:
-                        shutil.move(file_path, new_file_path)
-                        logger_search.debug(f"File moved: {new_file_path}")
-                        return True
-                    except Exception as e:
-                        logger_search.error(f"Error moving file {file_path} to {new_file_path}: {e}")
-                else:
-                    logger_search.debug(f"Metadata value '{metadata_value}' not found in {file_path}")
-            else:
-                logger_search.debug(f"Metadata key '{metadata_key}' not found in {file_path}")
+            if metadata_key in metadata_to_search and metadata_value in metadata_to_search:
+                new_file_path = os.path.join(target_dir, os.path.basename(file_path))
+                try:
+                    shutil.move(file_path, new_file_path)
+                    db_module.update_file_path(file_path, new_file_path)
+                    logger_search.debug(f"File moved and database updated: {new_file_path}")
+                    return True, file_path, new_file_path
+                except Exception as e:
+                    logger_search.error(f"Error moving file {file_path} to {new_file_path}: {e}")
         else:
             logger_search.debug(f"No metadata found for file: {file_path}")
     except Exception as e:
         logger_search.error(f"Error processing file {file_path}: {e}")
     
-    return False
+    return False, file_path, None
+
 def find_and_move_images(source_dirs, target_dir, metadata_key, metadata_value, search_mode, exiftool_cmd, batch_size=100):
     if not source_dirs or not target_dir:
         raise ValueError("source_dirs and target_dir cannot be None")
@@ -63,6 +53,7 @@ def find_and_move_images(source_dirs, target_dir, metadata_key, metadata_value, 
 
     total_files = len(all_files)
     moved_files = 0
+    file_moves = []
 
     logger_search.info(f"Total files to process: {total_files}")
     logger_search.info(f"Processing in batches of {batch_size}")
@@ -79,10 +70,20 @@ def find_and_move_images(source_dirs, target_dir, metadata_key, metadata_value, 
                            for file_path in batch]
                 
                 for future in as_completed(futures):
-                    result = future.result()
+                    result, old_path, new_path = future.result()
                     if result:
                         moved_files += 1
+                        if new_path:
+                            file_moves.append((old_path, new_path))
                     pbar.update(1)
+
+            # Perform batch update after processing each batch
+            if file_moves:
+                try:
+                    db_module.batch_update_file_paths(file_moves)
+                    file_moves.clear()
+                except Exception as e:
+                    logger_search.error(f"Error in batch updating file paths: {e}")
 
     logger_search.info(f"Search complete. Processed {total_files} files.")
     logger_search.info(f"Moved {moved_files} files to {target_dir}")
@@ -135,13 +136,20 @@ def search_and_move_images(cli: CommandLineInterface):
     find_and_move_images(source_directories, target_directory, metadata_key.lower(), metadata_value, search_mode, exiftool_cmd, batch_size)
 
 def update_database(cli: CommandLineInterface):
-    source_directory = cli.prompt_for_directory("Enter Source Directory to update the database: ")
+    source_directories = cli.prompt_for_directory("Enter Source Directory(ies) (comma-separated) to update the database: ")
+    if not source_directories:
+        print("No valid source directories specified. Exiting update.")
+        return
+
     exiftool_cmd, error = db_module.check_exiftool()
     if error:
         print(error)
         return
 
-    db_module.update_database_with_folder_contents(source_directory, exiftool_cmd)
+    for source_directory in source_directories:
+        print(f"Updating database for directory: {source_directory}")
+        db_module.update_database_with_folder_contents(source_directory, exiftool_cmd)
+    
     print("Database update completed successfully.")
 
 # This function is no longer needed as a separate menu, but kept for compatibility
