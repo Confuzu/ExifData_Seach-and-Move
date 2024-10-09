@@ -8,10 +8,10 @@ import exiftool_search_DB as db_module
 
 def display_menu():
     print("\nExiftool Search and Analysis Tool")
-    print("1. Search and Move Images")
-    print("2. Update Database")
-    print("3. Search for Models")
-    print("4. Exit")
+    print(" 1. Search and Move Images")
+    print(" 2. Update Database")
+    print(" 3. Search for Models")
+    print(" 4. Exit")
 
 def main():
     cli = CommandLineInterface()
