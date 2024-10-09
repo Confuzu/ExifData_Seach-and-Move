@@ -57,7 +57,7 @@ You can adjust the following settings in the scripts:
 - `BATCH_SIZE`: Number of images to process in each batch (default: 100)
 - `MAX_WORKERS`: Number of worker threads for parallel processing (default: 24)
    
-Adjust these based on your system's capabilities and requirements.
+Adjust these based on your system's capabilities and requirements.<br>
 On a 12 Core 24 Thread CPU + SSD + 32GB 25k Images in 01:38 min data extracted and written to the Database
 
 
