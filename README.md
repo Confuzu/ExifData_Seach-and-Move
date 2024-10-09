@@ -58,7 +58,7 @@ You can adjust the following settings in the scripts:
 - `MAX_WORKERS`: Number of worker threads for parallel processing (default: 24)
    
 Adjust these based on your system's capabilities and requirements.
-
+On a 12 Core 24 Thread CPU + SSD + 32GB 25k Images in 01:38 min data extracted and written to the Database
 
 
 ## How to Use
