@@ -5,7 +5,8 @@ This tool is designed to find images by their prompts in their embedded metadata
 ## Key Features
 
 - Multi-directory search and moving of image files based on specific metadata criteria
-- Update and maintain a SQLite database of image metadata for quick searching
+- Automatically updates file paths in the database when images are moved, ensuring the database always reflects the current locations of images
+- Update and maintain a SQLite database of image metadata for searching
 - Analyze and list models used in AI-generated images across directories
 - Efficient metadata extraction using ExifTool
 - Parallel processing for improved performance with large datasets
