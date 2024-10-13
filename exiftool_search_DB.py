@@ -12,7 +12,7 @@ import time
 
 # Setup logging
 script_dir = os.path.dirname(os.path.abspath(__file__))
-log_file_path = os.path.join(script_dir, "process_exiftool_search_DB.txt")
+log_file_path = os.path.join(script_dir, "process_log_exiftool_search_DB.txt")
 logger_db = logging.getLogger('db')
 logger_db.setLevel(logging.DEBUG)
 file_handler_db = logging.FileHandler(log_file_path, encoding='utf-8')
@@ -311,12 +311,22 @@ def update_database_with_folder_contents(source_dir, exiftool_cmd):
 
 # Helper function to check if ExifTool is installed
 def check_exiftool():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    local_exiftool = os.path.join(script_dir, "exiftool.exe" if sys.platform.startswith('win32') else "exiftool")
+    
+    if os.path.exists(local_exiftool):
+        return local_exiftool, None
+    
     try:
         exiftool_cmd = "exiftool.exe" if sys.platform.startswith('win32') else "exiftool"
         subprocess.run([exiftool_cmd, "-ver"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         return exiftool_cmd, None
     except FileNotFoundError:
-        return None, "ExifTool not found. Please install it to use this script. https://exiftool.org/install.html"
+        return None, (
+        "ExifTool not found. Please install it or place it in the same directory as this script.\n"
+        "https://exiftool.org/install.html\n"
+        "Rename it to exiftool.exe for command-line use."
+    )
     except subprocess.CalledProcessError:
         return None, "Error occurred while checking ExifTool."
 
