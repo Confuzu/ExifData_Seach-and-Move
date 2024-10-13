@@ -119,3 +119,16 @@ Files: 3
 
 ### Acknowledgements
   Thanks to Phil Harvey for his awesome exif data tool https://exiftool.org
+
+
+
+### Updates
+
+1. Windows compatibility update
+- Added a requirement pyreadline3; sys_platform == 'win32' for windows compatibility
+
+2.Qualitiy of Life update
+- Added support for using the ExifTool executable when placed in the same directory as the script. The script now checks if it is in the same folder or accessible system-wide.
+- Increased flexibility for users who prefer not to install ExifTool system-wide.
+
+
