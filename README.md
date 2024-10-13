@@ -124,7 +124,7 @@ Files: 3
 
 ## Updates
 
-1. Windows compatibility update
+1.Windows compatibility update
 - Added a requirement pyreadline3; sys_platform == 'win32' for windows compatibility
 
 2.Qualitiy of Life update
