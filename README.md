@@ -122,7 +122,7 @@ Files: 3
 
 
 
-### Updates
+## Updates
 
 1. Windows compatibility update
 - Added a requirement pyreadline3; sys_platform == 'win32' for windows compatibility
