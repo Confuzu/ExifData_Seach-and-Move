@@ -16,7 +16,7 @@ This tool is designed to find images by their prompts in their embedded metadata
 
 ## Project Structure
 
-The project consists of four core scripts with the main.py to start:
+The project consists of five scripts + the config.ini with the main.py to start:
 
 
 1. `main.py`: 
@@ -37,6 +37,9 @@ The project consists of four core scripts with the main.py to start:
 5. `utilities.py`:
    - Provides CLI utilities and input handling   
 
+6. `config.ini`:
+   - Central configuration for batch size, workers, extensions, logging, and security
+   - 
 
 ### Prerequisites
 
@@ -53,11 +56,41 @@ Ensure ExifTool is in your PATH and accessible from the command line
 
 ## Configuration
 
-You can adjust the following settings in the scripts:
+All settings are managed in `config.ini`:
 
-- `BATCH_SIZE`: Number of images to process in each batch (default: 100)
-- `MAX_WORKERS`: Number of worker threads for parallel processing (default: 24)
-   
+```ini
+[general]
+batch_size = 100              # Images per processing batch
+max_workers = 24              # Worker threads for parallel processing
+valid_extensions = .jpg,.jpeg,.png
+
+[database]
+db_name = statistics_image_metadata.db
+
+[logging]
+log_level = DEBUG             # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+[security]
+enable_blocklist = true       # Block dangerous system directories
+custom_blocked_paths =        # Additional paths to block (comma-separated)
+```
+
+## Security
+
+Directory and file path inputs are validated:
+
+- **Blocklist** -- System directories (`/etc`, `/boot`, `/proc`, `C:\Windows\System32`, etc.) are blocked by default.
+- **Whitelist** -- During file collection, each file path is resolved and confirmed to be under the allowed source directory. Symlinks that escape the source tree are skipped.
+- **Network path detection** -- UNC paths (`\\server\share`, `//server/share`) and common network mount points can optionally be blocked.
+
+Examples of `config.ini` customization:
+```ini
+# Block network paths
+block_network_paths = true
+# Add custom paths to the blocklist
+custom_blocked_paths = /mnt/sensitive,/opt/private
+```
+
 Adjust these based on your system's capabilities and requirements.<br>
 On a 12 Core 24 Thread CPU + SSD + 32GB 25k Images in 01:38 min data extracted and written to the Database
 
@@ -124,11 +157,15 @@ Files: 3
 
 ## Updates
 
-1.Windows compatibility update
-- Added a requirement pyreadline3; sys_platform == 'win32' for windows compatibility
+0.3 Configuration and security update
+   - Moved all settings to `config.ini` (batch size, workers, extensions, database name, log level)
+   - Added path validation: blocklist, whitelist, network path detection, symlink escape protection
 
-2.Qualitiy of Life update
-- Added support for using the ExifTool executable when placed in the same directory as the script. The script now checks if it is in the same folder or accessible system-wide.
-- Increased flexibility for users who prefer not to install ExifTool system-wide.
+0.2 .Windows compatibility update
+   - Added a requirement pyreadline3; sys_platform == 'win32' for windows compatibility
+
+0.1 Qualitiy of Life update
+   - Added support for using the ExifTool executable when placed in the same directory as the script. The script now checks if it is in the same folder or accessible system-wide.
+   - Increased flexibility for users who prefer not to install ExifTool system-wide.
 
 
