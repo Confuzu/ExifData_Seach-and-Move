@@ -4,7 +4,7 @@ import exiftool_search_DB as db_module
 from tqdm import tqdm
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from utilities import CommandLineInterface
+from utilities import CommandLineInterface, validate_file_path
 
 # Configure logger
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,21 +17,32 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler_search.setFormatter(formatter)
 logger_search.addHandler(file_handler_search)
 
+def get_unique_path(target_dir, filename):
+    """Generate a unique file path, appending _N suffix if a file already exists."""
+    dest = os.path.join(target_dir, filename)
+    if not os.path.exists(dest):
+        return dest
+    name, ext = os.path.splitext(filename)
+    counter = 1
+    while os.path.exists(dest):
+        dest = os.path.join(target_dir, f"{name}_{counter}{ext}")
+        counter += 1
+    return dest
+
 def process_file(args):
     file_path, target_dir, metadata_key, metadata_value, search_mode, exiftool_cmd = args
     logger_search.debug(f"Processing file: {file_path}")
-    
+
     try:
         metadata, metadata_after_prompt = db_module.get_metadata(file_path)
         if metadata and metadata_after_prompt:
             metadata_to_search = metadata if search_mode == "1" else metadata + " " + metadata_after_prompt
-            
+
             if metadata_key in metadata_to_search and metadata_value in metadata_to_search:
-                new_file_path = os.path.join(target_dir, os.path.basename(file_path))
+                new_file_path = get_unique_path(target_dir, os.path.basename(file_path))
                 try:
                     shutil.move(file_path, new_file_path)
-                    db_module.update_file_path(file_path, new_file_path)
-                    logger_search.debug(f"File moved and database updated: {new_file_path}")
+                    logger_search.debug(f"File moved: {new_file_path}")
                     return True, file_path, new_file_path
                 except Exception as e:
                     logger_search.error(f"Error moving file {file_path} to {new_file_path}: {e}")
@@ -48,8 +59,13 @@ def find_and_move_images(source_dirs, target_dir, metadata_key, metadata_value, 
 
     all_files = []
     for source_dir in source_dirs:
+        resolved_root = os.path.realpath(source_dir)
         for root, _, files in os.walk(source_dir):
-            all_files.extend([os.path.join(root, f) for f in files if f.lower().endswith(('.png', '.jpeg', '.jpg'))])
+            for f in files:
+                if f.lower().endswith(('.png', '.jpeg', '.jpg')):
+                    full_path = os.path.join(root, f)
+                    if validate_file_path(full_path, resolved_root):
+                        all_files.append(full_path)
 
     total_files = len(all_files)
     moved_files = 0
