@@ -21,11 +21,13 @@ def _load_security_config():
         config.read(config_path)
 
     enable_blocklist = config.getboolean('security', 'enable_blocklist', fallback=True)
+    block_network_paths = config.getboolean('security', 'block_network_paths', fallback=False)
     custom_str = config.get('security', 'custom_blocked_paths', fallback='')
     custom_blocked = [p.strip() for p in custom_str.split(',') if p.strip()]
 
     return {
         'enable_blocklist': enable_blocklist,
+        'block_network_paths': block_network_paths,
         'custom_blocked_paths': custom_blocked,
     }
 
@@ -138,8 +140,9 @@ def validate_directory(path):
     if not os.access(resolved, os.R_OK | os.X_OK):
         return False, f"Insufficient permissions for directory: {resolved}"
 
-    # Step 6: Network path check
-    if is_network_path(resolved):
+    # Step 6: Network path check (optional, disabled by default)
+    security_config = _load_security_config()
+    if security_config['block_network_paths'] and is_network_path(resolved):
         return False, f"Network paths are not allowed: {resolved}"
 
     # Step 7: Symlink escape check -- ensure the resolved path isn't
